@@ -1,11 +1,18 @@
 import os
-import subprocess
 import json
 import re
+from openai import OpenAI
 
 # Set your OpenRouter API Key
-API_KEY = "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"
-BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+API_KEY = os.getenv("OPENROUTER_API_KEY")
+if not API_KEY:
+    raise ValueError("❌ OPENROUTER_API_KEY environment variable not set.")
+
+BASE_URL = "https://openrouter.ai/api/v1"
+client = OpenAI(
+    base_url=BASE_URL,
+    api_key=API_KEY,
+)
 
 # Keywords for command execution
 EXECUTION_KEYWORDS = ["run", "execute", "start", "launch", "perform"]
@@ -14,39 +21,15 @@ CLEAR_SCREEN_KEYWORDS = ["clear", "wipe", "clean", "clear screen"]
 # Function to query OpenRouter AI for command conversion or conversation
 def query_ai(user_input, purpose):
     try:
-        # Define the request payload
-        data = {
-            "model": "deepseek/deepseek-chat",  # Using DeepSeek model from OpenRouter
-            "messages": [
+        completion = client.chat.completions.create(
+            model="deepseek/deepseek-chat-v3.1:free",
+            messages=[
                 {"role": "system", "content": "You are an AI that returns valid Linux commands when asked to execute or fix commands. Otherwise, respond as a chatbot."},
                 {"role": "user", "content": f"{purpose}: {user_input}"}
             ],
-            "max_tokens": 150
-        }
-
-        # Send request to OpenRouter using curl
-        response = subprocess.run(
-            [
-                "curl",
-                "-X", "POST", BASE_URL,
-                "-H", f"Authorization: Bearer {API_KEY}",
-                "-H", "Content-Type: application/json",
-                "-d", json.dumps(data)
-            ],
-            capture_output=True,
-            text=True
+            max_tokens=150
         )
-
-        # Parse the JSON response
-        result = json.loads(response.stdout)
-        
-        if "choices" in result and len(result["choices"]) > 0:
-            return result["choices"][0]["message"]["content"].strip()
-        else:
-            error_msg = result.get("error", {}).get("message", "Unknown error occurred.")
-            print(f"❌ Error: {error_msg}")
-            return None
-
+        return completion.choices[0].message.content.strip()
     except Exception as e:
         print(f"❌ Error connecting to OpenRouter API: {e}")
         return None
@@ -77,6 +60,7 @@ def extract_command(ai_response):
     return valid_commands
 
 # Function to run Linux commands safely
+import subprocess
 def run_command(command):
     try:
         output = subprocess.check_output(command, shell=True, text=True)
